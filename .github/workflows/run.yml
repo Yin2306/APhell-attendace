@@ -1,0 +1,26 @@
+name: Manual Attendance
+on:
+  workflow_dispatch:
+    inputs:
+      otp:
+        description: 'Enter the 3-digit OTP'
+        required: true
+
+jobs:
+  run-script:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+      - name: Install dependencies
+        run: |
+          pip install playwright pyyaml requests
+          playwright install chromium
+      - name: Run attendance script
+        env:
+          ACCOUNTS_YAML: ${{ secrets.ACCOUNTS_YAML }}
+          OTP_CODE: ${{ github.event.inputs.otp }}
+        run: python main.py
