@@ -16,18 +16,24 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.9'
+          cache: 'pip' # 开启 pip 缓存，加速安装 requests 和 pyyaml
 
-      # 修复后的缓存逻辑：不再依赖 requirements.txt
       - name: Cache Playwright Browsers
+        id: cache-playwright
         uses: actions/cache@v3
         with:
           path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-v1 # 手动设置一个 key
+          key: ${{ runner.os }}-playwright-v1
 
-      - name: Install dependencies
+      - name: Fast Install
         run: |
-          pip install playwright pyyaml requests
-          playwright install chromium
+          pip install playwright pyyaml requests --no-cache-dir
+          # 如果缓存命中了，就不再运行完整的 install，只安装必要的系统依赖
+          if [ "${{ steps.cache-playwright.outputs.cache-hit }}" != "true" ]; then
+            playwright install --with-deps chromium
+          else
+            playwright install-deps chromium
+          fi
 
       - name: Run attendance script
         env:
