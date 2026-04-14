@@ -11,32 +11,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.9'
-          # 删掉了 cache: 'pip'，避免找不到 requirements.txt 的错误
-
-      - name: Cache Playwright Browsers
-        id: cache-playwright
-        uses: actions/cache@v3
-        with:
-          path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-v1
-
-      - name: Fast Install
-        run: |
-          # 强制安装必要库，不生成缓存文件以提速
-          pip install playwright pyyaml requests --no-cache-dir
-          
-          # 如果缓存命中了，只安装系统依赖，不下载浏览器
-          if [ "${{ steps.cache-playwright.outputs.cache-hit }}" == "true" ]; then
-            playwright install-deps chromium
-          else
-            playwright install --with-deps chromium
-          fi
-
+      - name: Install dependencies
+        run: pip install pyyaml requests # 只装这两个，不装 playwright
       - name: Run attendance script
         env:
           ACCOUNTS_YAML: ${{ secrets.ACCOUNTS_YAML }}
