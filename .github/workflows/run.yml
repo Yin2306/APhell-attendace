@@ -11,17 +11,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.9'
-          cache: 'pip' # 自动缓存 pip 依赖
 
+      # 修复后的缓存逻辑：不再依赖 requirements.txt
       - name: Cache Playwright Browsers
         uses: actions/cache@v3
         with:
           path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('requirements.txt') }}
+          key: ${{ runner.os }}-playwright-v1 # 手动设置一个 key
 
       - name: Install dependencies
         run: |
