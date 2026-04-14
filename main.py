@@ -1,11 +1,26 @@
 import os
-import time
 import yaml
 import requests
-from playwright.sync_api import sync_playwright
 from concurrent.futures import ThreadPoolExecutor
 
-# 1. 签到函数
+def get_token_via_api(username, password):
+    """直接模拟 Apspace 登录接口，不通过浏览器"""
+    session = requests.Session()
+    login_url = "https://apspace.apu.edu.my/api/login" # 模拟登录 API
+    payload = {
+        "username": f"{username}@mail.apu.edu.my",
+        "password": password
+    }
+    try:
+        # 直接发送 POST 请求获取 Token
+        response = session.post(login_url, json=payload, timeout=10)
+        data = response.json()
+        # 注意：这里需要根据 APU 实际 API 的返回字段来提取 token
+        # 通常是 data['token'] 或 data['data']['token']
+        return data.get('token') or data.get('data', {}).get('token')
+    except:
+        return None
+
 def take_attendance(name, token, api_key, otp):
     url = "https://attendix.apu.edu.my/graphql"
     payload = {
@@ -19,68 +34,28 @@ def take_attendance(name, token, api_key, otp):
         "Content-Type": "application/json"
     }
     try:
-        res = requests.post(url, json=payload, headers=headers, timeout=10)
+        res = requests.post(url, json=payload, headers=headers, timeout=5)
         return res.json()
-    except Exception as e:
-        return {"error": str(e)}
+    except:
+        return None
 
-# 2. 单个账号的完整流程（登录 + 签到）
-def process_single_account(acc, otp):
-    # ... 前面的代码保持不变 ...
-    with sync_playwright() as p:
-        try:
-            browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
-            context = browser.new_context()
-            page = context.new_page()
-            
-            # 使用列表来存储，方便在回调中修改
-            token_container = []
-
-            def handle_request(request):
-                auth = request.headers.get("authorization")
-                if auth and "Bearer" in auth:
-                    t = auth.replace("Bearer ", "")
-                    token_container.append(t)
-
-            page.on("request", handle_request)
-            
-            # 这里的 goto 只要到达登录页即可
-            page.goto("https://apspace.apu.edu.my/login")
-            
-            page.fill('input[type="email"]', f"{acc['username']}@mail.apu.edu.my")
-            page.click('input[type="submit"]')
-            page.wait_for_selector('input[type="password"]')
-            page.fill('input[type="password"]', acc['password'])
-            page.click('input[type="submit"]')
-            
-            # 核心优化：只要监听到 Token 存入列表，立刻执行下一步，不再等待页面刷新
-            for _ in range(40): # 最多等 20 秒
-                if token_container:
-                    token = token_container[0]
-                    # 抓到 Token 后直接在浏览器后台发送 API，连浏览器都不用关，速度最快
-                    result = take_attendance(acc['name'], token, acc['api_key'], otp)
-                    print(f"⚡ {acc['name']} FAST-TICK: {result}")
-                    browser.close()
-                    return True
-                time.sleep(0.5)
-            
-            browser.close()
-            return False
-        except:
-            return False
+def process_account(acc, otp):
+    print(f"⚡ Processing {acc['name']}...")
+    # 核心：不再调用 Playwright，直接发请求
+    token = get_token_via_api(acc['username'], acc['password'])
+    if token:
+        res = take_attendance(acc['name'], token, acc['api_key'], otp)
+        print(f"✅ {acc['name']} Done: {res}")
+    else:
+        print(f"❌ {acc['name']} Login Failed")
 
 if __name__ == "__main__":
     accounts_raw = os.getenv("ACCOUNTS_YAML")
     otp = os.getenv("OTP_CODE")
-    
-    if not accounts_raw or not otp:
-        exit(1)
+    if not accounts_raw or not otp: exit(1)
 
     accounts = yaml.safe_load(accounts_raw)
     
-    # --- 核心提速：使用多线程同时跑 11 个账号 ---
-    print(f"⚡ Parallel processing started for {len(accounts)} accounts...")
+    # 11个人一起跑，API 模式下负载极低
     with ThreadPoolExecutor(max_workers=len(accounts)) as executor:
-        executor.map(lambda acc: process_single_account(acc, otp), accounts)
-    
-    print("All done!")
+        executor.map(lambda acc: process_account(acc, otp), accounts)
