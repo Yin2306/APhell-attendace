@@ -26,58 +26,47 @@ def take_attendance(name, token, api_key, otp):
 
 # 2. 单个账号的完整流程（登录 + 签到）
 def process_single_account(acc, otp):
-    username = acc['username']
-    password = acc['password']
-    name = acc['name']
-    api_key = acc['api_key']
-    
-    print(f"🚀 Starting for {name}...")
-    
+    # ... 前面的代码保持不变 ...
     with sync_playwright() as p:
         try:
-            # 启动浏览器
             browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
             context = browser.new_context()
             page = context.new_page()
-            token = None
+            
+            # 使用列表来存储，方便在回调中修改
+            token_container = []
 
             def handle_request(request):
-                nonlocal token
                 auth = request.headers.get("authorization")
                 if auth and "Bearer" in auth:
-                    token = auth.replace("Bearer ", "")
+                    t = auth.replace("Bearer ", "")
+                    token_container.append(t)
 
             page.on("request", handle_request)
-            page.goto("https://apspace.apu.edu.my/login", timeout=60000)
             
-            # 填写登录信息
-            page.fill('input[type="email"]', f"{username}@mail.apu.edu.my")
+            # 这里的 goto 只要到达登录页即可
+            page.goto("https://apspace.apu.edu.my/login")
+            
+            page.fill('input[type="email"]', f"{acc['username']}@mail.apu.edu.my")
             page.click('input[type="submit"]')
-            page.wait_for_selector('input[type="password"]', timeout=20000)
-            page.fill('input[type="password"]', password)
+            page.wait_for_selector('input[type="password"]')
+            page.fill('input[type="password"]', acc['password'])
             page.click('input[type="submit"]')
             
-            try:
-                page.wait_for_selector('#idSIButton9', timeout=5000)
-                page.click('#idSIButton9')
-            except: pass
-
-            # 等待 Token 抓取（只要抓到 Token 就立刻停止浏览器，节省时间）
-            start_time = time.time()
-            while not token and time.time() - start_time < 30:
+            # 核心优化：只要监听到 Token 存入列表，立刻执行下一步，不再等待页面刷新
+            for _ in range(40): # 最多等 20 秒
+                if token_container:
+                    token = token_container[0]
+                    # 抓到 Token 后直接在浏览器后台发送 API，连浏览器都不用关，速度最快
+                    result = take_attendance(acc['name'], token, acc['api_key'], otp)
+                    print(f"⚡ {acc['name']} FAST-TICK: {result}")
+                    browser.close()
+                    return True
                 time.sleep(0.5)
             
             browser.close()
-
-            if token:
-                result = take_attendance(name, token, api_key, otp)
-                print(f"✅ {name}: {result}")
-                return True
-            else:
-                print(f"❌ {name}: Failed to get token")
-                return False
-        except Exception as e:
-            print(f"⚠️ {name} Error: {str(e)}")
+            return False
+        except:
             return False
 
 if __name__ == "__main__":
