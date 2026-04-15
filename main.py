@@ -106,6 +106,7 @@ def process_single_account(acc, otp):
         except Exception as e:
             print(f"❌ {acc['name']} Error: {str(e)}")
             return False
+# ... 之前的代码保持不变 ...
 
 if __name__ == "__main__":
     accounts_raw = os.getenv("ACCOUNTS_YAML")
@@ -117,6 +118,11 @@ if __name__ == "__main__":
 
     accounts = yaml.safe_load(accounts_raw)
     print(f"🚀 Launching attendance for {len(accounts)} accounts with OTP: {otp}")
+
+    # --- 重点：把这里的 max_workers 改成 3 ---
+    # 这样 GitHub 每次只跑 3 个人，跑完 3 个再跑下 3 个，绝对不会卡死
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        executor.map(lambda acc: process_single_account(acc, otp), accounts)
 
     with ThreadPoolExecutor(max_workers=len(accounts)) as executor:
         executor.map(lambda acc: process_single_account(acc, otp), accounts)
