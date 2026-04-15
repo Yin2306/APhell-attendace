@@ -117,10 +117,9 @@ if __name__ == "__main__":
 
     accounts = yaml.safe_load(accounts_raw)
     
-    # 计算最优并发数：如果有11个人，开4个线程分3批跑是最快的平衡点
-    num_workers = min(len(accounts), 4) 
-    
-    print(f"⚡ 极速模式启动 | 并发数: {num_workers} | 目标人数: {len(accounts)}")
+    # 建议设为 3。3 个人同时登录，速度会提升 3 倍，且不会卡死
+    num_workers = 3 
+    print(f"⚡ 开启极速模式 | 并发数: {num_workers} | 总人数: {len(accounts)}")
 
     with ThreadPoolExecutor(max_workers=num_workers) as executor:
         executor.map(lambda acc: process_single_account(acc, otp), accounts)
