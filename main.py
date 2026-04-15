@@ -6,7 +6,6 @@ from playwright.sync_api import sync_playwright
 from concurrent.futures import ThreadPoolExecutor
 
 # --- 配置区 ---
-# APU Attendix 通用 API KEY
 COMMON_API_KEY = "da2-u4ksf3gspnhyjcokxzugo3mqr4"
 GRAPHQL_URL = "https://attendix.apu.edu.my/graphql"
 
@@ -33,6 +32,7 @@ def process_single_account(acc, otp):
     """单个账号的登录及 Token 抓取流程"""
     print(f"🎬 Starting process for: {acc['name']}")
     with sync_playwright() as p:
+        browser = None
         try:
             browser = p.chromium.launch(headless=True, args=[
                 "--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", 
@@ -55,50 +55,54 @@ def process_single_account(acc, otp):
             page.goto(login_url, wait_until="networkidle", timeout=60000)
             
             full_email = f"{acc['username']}@mail.apu.edu.my"
-            page.wait_for_selector('input[type="email"], [role="listitem"], text="Pick an account"', timeout=20000)
-            if page.get_by_text(full_email).is_visible():
-                page.get_by_text(full_email).click()
+            
+            # --- 修正点：使用标准的 CSS 选择器 ---
+            # 只等待 email 输入框或列表项，不在这里写 text="..."
+            page.wait_for_selector('input[type="email"], [role="listitem"]', timeout=20000)
+            
+            if page.get_by_text(full_email, exact=False).is_visible():
+                print(f"✅ {acc['name']} 点击头像...")
+                page.get_by_text(full_email, exact=False).click()
             else:
+                print(f"📝 {acc['name']} 输入邮箱...")
                 page.fill('input[type="email"]', full_email)
-                page.click('input[type="submit"]')
+                page.click('input[id="idSIButton9"]') # 微软标准的 Next 按钮 ID
 
             page.wait_for_selector('input[type="password"]', timeout=20000)
             page.fill('input[type="password"]', acc['password'])
-            page.click('input[type="submit"]')
+            page.click('input[id="idSIButton9"]') # 微软标准的 Sign In 按钮 ID
             
+            # 处理“保持登录”弹窗
             try:
                 page.wait_for_selector('#idSIButton9', timeout=5000)
                 page.click('#idSIButton9')
             except: pass
 
-            # --- 核心抓取与报错逻辑 ---
+            # 抓取 Token
             for _ in range(150):
                 if token_container:
                     token = token_container[-1]
                     result = take_attendance(acc['name'], token, otp)
                     
-                    context.close()
-                    browser.close()
+                    if browser: browser.close()
 
-                    # 检查 GraphQL 返回的具体错误
                     if result.get("data") and result["data"].get("updateAttendance"):
                         return f"✅ {acc['name']}: Success"
                     else:
-                        # 抓取 API 返回的详细错误消息 (比如 Help Centre 提示)
                         error_detail = "Unknown error"
                         if "errors" in result:
                             error_detail = result["errors"][0].get("message", "API Error")
                         return f"❌ {acc['name']}: Failed ({error_detail})"
                 time.sleep(0.1)
             
-            browser.close()
+            if browser: browser.close()
             return f"❌ {acc['name']}: Failed (Token Timeout)"
             
         except Exception as e:
+            if browser: browser.close()
             return f"❌ {acc['name']}: Failed ({str(e)})"
 
 if __name__ == "__main__":
-    import time
     start_time = time.time()
     
     accounts_raw = os.getenv("ACCOUNTS_YAML")
@@ -114,14 +118,11 @@ if __name__ == "__main__":
     print(f"🚀 启动汇报模式 | 线程数: {num_workers} | 目标: {len(accounts)}")
 
     with ThreadPoolExecutor(max_workers=num_workers) as executor:
-        # 这里直接接收返回的字符串列表
         final_reports = list(executor.map(lambda acc: process_single_account(acc, otp), accounts))
 
-    # 统计总耗时并格式化
     end_time = time.time()
     report_text = f"🏁 签到任务结束 | 耗时: {int(end_time - start_time)}s\n\n" + "\n".join(final_reports)
     
-    # 写入文件供 GitHub Actions 读取
     with open("result.txt", "w", encoding="utf-8") as f:
         f.write(report_text)
     
