@@ -9,22 +9,36 @@ on:
 jobs:
   run-script:
     runs-on: ubuntu-latest
+    env:
+      # 加上这一行，可以消除 Node.js 20 的警告
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - uses: actions/checkout@v4
+      
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.9'
+
       - name: Cache Playwright
         id: cache-playwright
         uses: actions/cache@v3
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-v1
+
       - name: Install dependencies
         run: |
-          pip install playwright pyyaml requests
-          playwright install --with-deps chromium
+          # --no-cache-dir 可以稍微加快安装速度
+          pip install playwright pyyaml requests --no-cache-dir
+          
+          # 如果缓存命中了，只安装系统运行库，不重新下载浏览器
+          if [ "${{ steps.cache-playwright.outputs.cache-hit }}" == "true" ]; then
+            playwright install-deps chromium
+          else
+            playwright install --with-deps chromium
+          fi
+
       - name: Run attendance script
         env:
           ACCOUNTS_YAML: ${{ secrets.ACCOUNTS_YAML }}
