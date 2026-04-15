@@ -42,6 +42,7 @@ jobs:
       - name: Run attendance script
         env:
           ACCOUNTS_YAML: ${{ secrets.ACCOUNTS_YAML }}
-          OTP_CODE: ${{ github.event.inputs.otp }}
+          # 这样写可以同时支持“手动输入”和“Telegram 自动触发”
+          OTP_CODE: ${{ github.event.inputs.otp || github.event.client_payload.otp }}
         run: python main.py
 
