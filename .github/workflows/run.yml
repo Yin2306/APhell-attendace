@@ -1,4 +1,5 @@
 name: Manual Attendance
+
 on:
   workflow_dispatch:
     inputs:
@@ -39,19 +40,19 @@ jobs:
       - name: Send Report to Telegram
         if: always()
         env:
-          # 核心修正：在这里显式定义环境变量，让下面的 curl 能读到
+          # Core fix: explicitly define environment variables here so curl can access them
           TG_BOT_TOKEN: "8673109538:AAFgaGnTH3C_jmOFsgSIOYsiuGW5YibcXgc"
           TG_CHAT_ID: "-4908224282"
         run: |
           if [ -f result.txt ]; then
             REPORT=$(cat result.txt)
           else
-            REPORT="❌ 脚本未生成 result.txt，请检查 GitHub 日志。"
+            REPORT="❌ Script did not generate result.txt. Please check GitHub logs."
           fi
 
-          # 使用 printf 来处理可能存在的特殊字符，防止 curl 崩溃
+          # Use printf to safely handle special characters and prevent curl from breaking
           curl -s -X POST "https://api.telegram.org/bot$TG_BOT_TOKEN/sendMessage" \
             --data-urlencode "chat_id=$TG_CHAT_ID" \
-            --data-urlencode "text=📊 APU 签到详细汇报：
+            --data-urlencode "text=📊 APU Attendance Detailed Report:
 
           $REPORT"
