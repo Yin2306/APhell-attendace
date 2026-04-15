@@ -113,7 +113,7 @@ if __name__ == "__main__":
         exit(1)
 
     accounts = yaml.safe_load(accounts_raw)
-    num_workers = 6
+    num_workers = 5
     
     print(f"🚀 启动汇报模式 | 线程数: {num_workers} | 目标: {len(accounts)}")
 
