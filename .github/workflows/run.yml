@@ -4,9 +4,8 @@ on:
     inputs:
       otp:
         required: true
-  # 必须增加这个，GitHub 才会理会来自 Cloudflare 的指令
   repository_dispatch:
-    types: [tg_bot_trigger]
+    types: [tg_bot_trigger]  # 加上这一段，GitHub 才会听 Cloudflare 的话
 
 jobs:
   run-script:
