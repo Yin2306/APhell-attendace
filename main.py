@@ -34,14 +34,9 @@ def process_single_account(acc, otp):
     print(f"🎬 Starting process for: {acc['name']}")
     with sync_playwright() as p:
         try:
-            # 启动无头浏览器
-            # 这里的 args 增加了禁用 GPU 和图片加载，能省下不少 CPU 资源
             browser = p.chromium.launch(headless=True, args=[
-                "--no-sandbox", 
-                "--disable-setuid-sandbox", 
-                "--disable-dev-shm-usage", 
-                "--disable-gpu",
-                "--blink-settings=imagesEnabled=false" # 禁用图片加载，最强提速
+                "--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", 
+                "--disable-gpu", "--blink-settings=imagesEnabled=false"
             ])
             context = browser.new_context(
                 user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
@@ -49,74 +44,58 @@ def process_single_account(acc, otp):
             )
             page = context.new_page()
             
-            # 用于存储拦截到的 Bearer Token
             token_container = []
             def handle_request(request):
                 auth = request.headers.get("authorization")
                 if auth and "Bearer" in auth:
                     token_container.append(auth.replace("Bearer ", ""))
-
             page.on("request", handle_request)
 
-            # 1. 直达微软登录页 (跳过 APSpace 首页提升稳定性)
             login_url = "https://login.microsoftonline.com/0fed03a3-402d-4633-a8cd-8b308822253e/oauth2/v2.0/authorize?client_id=e96b418c-3f97-4b0f-b124-1cb3b347a06e&response_type=code&redirect_uri=https%3A%2F%2Fauth.apu.edu.my%2Fauth_token&scope=Group.Read.All+GroupMember.Read.All+User.Read+offline_access+openid+profile&state=%7B%22origin%22%3A+%22https%3A%2F%2Fapspace.apu.edu.my%22%2C+%22endpoint%22%3A+%22%2Flogin%22%2C+%22app_id%22%3A+%22apspace%22%7D"
-            
-            print(f"📡 {acc['name']} 正在直达微软登录页...")
             page.goto(login_url, wait_until="networkidle", timeout=60000)
             
-            # 2. 识别账号 (处理直接输入或点击头像)
             full_email = f"{acc['username']}@mail.apu.edu.my"
-            try:
-                # 等待页面加载出账号列表或输入框
-                page.wait_for_selector('input[type="email"], [role="listitem"], text="Pick an account"', timeout=20000)
-                
-                if page.get_by_text(full_email).is_visible():
-                    print(f"✅ {acc['name']} 发现已有账号，点击头像登录...")
-                    page.get_by_text(full_email).click()
-                else:
-                    print(f"📝 {acc['name']} 手动输入 TP 号...")
-                    page.fill('input[type="email"]', full_email)
-                    page.click('input[type="submit"]')
-            except:
-                print(f"⚠️ {acc['name']} 尝试保底填表...")
+            page.wait_for_selector('input[type="email"], [role="listitem"], text="Pick an account"', timeout=20000)
+            if page.get_by_text(full_email).is_visible():
+                page.get_by_text(full_email).click()
+            else:
                 page.fill('input[type="email"]', full_email)
                 page.click('input[type="submit"]')
 
-            # 3. 输入密码
-            print(f"🔑 {acc['name']} 正在输入密码...")
             page.wait_for_selector('input[type="password"]', timeout=20000)
             page.fill('input[type="password"]', acc['password'])
             page.click('input[type="submit"]')
             
-            # 处理“保持登录”弹窗
             try:
                 page.wait_for_selector('#idSIButton9', timeout=5000)
                 page.click('#idSIButton9')
             except: pass
 
-            # 4. 守株待兔抓取 Token
-            print(f"🛰️ {acc['name']} 已登录，正在监听 Token 响应...")
-            
-            # 循环检查是否拦截到 Token
-            for _ in range(150): # 0.1s * 150 = 15秒总等待
+            # --- 核心抓取与报错逻辑 ---
+            for _ in range(150):
                 if token_container:
                     token = token_container[-1]
-                    # 拿到 Token 立刻执行，不回传页面
                     result = take_attendance(acc['name'], token, otp)
-                    print(f"🔥 {acc['name']} SUCCESS: {result}")
                     
-                    # 强制立刻关闭，不等待任何后续加载
                     context.close()
                     browser.close()
-                    return True
-                time.sleep(0.1) # 极速轮询
+
+                    # 检查 GraphQL 返回的具体错误
+                    if result.get("data") and result["data"].get("updateAttendance"):
+                        return f"✅ {acc['name']}: Success"
+                    else:
+                        # 抓取 API 返回的详细错误消息 (比如 Help Centre 提示)
+                        error_detail = "Unknown error"
+                        if "errors" in result:
+                            error_detail = result["errors"][0].get("message", "API Error")
+                        return f"❌ {acc['name']}: Failed ({error_detail})"
+                time.sleep(0.1)
             
-            print(f"⚠️ {acc['name']} 抓取 Token 超时")
             browser.close()
-            return False
+            return f"❌ {acc['name']}: Failed (Token Timeout)"
+            
         except Exception as e:
-            print(f"❌ {acc['name']} 运行出错: {str(e)}")
-            return False
+            return f"❌ {acc['name']}: Failed ({str(e)})"
 
 if __name__ == "__main__":
     import time
@@ -130,33 +109,20 @@ if __name__ == "__main__":
         exit(1)
 
     accounts = yaml.safe_load(accounts_raw)
-    
     num_workers = 6
-    print(f"🚀 极速模式启动 | 线程数: {num_workers} | 目标人数: {len(accounts)} | OTP: {otp}")
-
-    # --- 修改点 1: 使用 list 接收线程返回的结果 ---
-    def run_and_report(acc):
-        # 我们稍微调整一下逻辑，让它返回 (姓名, 是否成功, 错误消息)
-        try:
-            # 假设你修改了 process_single_account 让它返回具体错误
-            # 这里为了简单，我们直接用 try-except 包裹
-            success = process_single_account(acc, otp)
-            if success:
-                return f"✅ {acc['name']}: Success"
-            else:
-                return f"❌ {acc['name']}: Failed (Login timeout/Token error)"
-        except Exception as e:
-            return f"❌ {acc['name']}: Failed ({str(e)})"
+    
+    print(f"🚀 启动汇报模式 | 线程数: {num_workers} | 目标: {len(accounts)}")
 
     with ThreadPoolExecutor(max_workers=num_workers) as executor:
-        # 获取所有人的运行结果
-        final_reports = list(executor.map(run_and_report, accounts))
+        # 这里直接接收返回的字符串列表
+        final_reports = list(executor.map(lambda acc: process_single_account(acc, otp), accounts))
 
-    # --- 修改点 2: 将结果写入 result.txt ---
+    # 统计总耗时并格式化
     end_time = time.time()
-    summary = f"🏁 完成！总耗时: {int(end_time - start_time)}s\n" + "\n".join(final_reports)
+    report_text = f"🏁 签到任务结束 | 耗时: {int(end_time - start_time)}s\n\n" + "\n".join(final_reports)
     
+    # 写入文件供 GitHub Actions 读取
     with open("result.txt", "w", encoding="utf-8") as f:
-        f.write(summary)
+        f.write(report_text)
     
-    print(summary)
+    print(report_text)
