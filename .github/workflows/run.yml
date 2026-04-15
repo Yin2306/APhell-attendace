@@ -3,8 +3,10 @@ on:
   workflow_dispatch:
     inputs:
       otp:
-        description: 'Enter the 3-digit OTP'
         required: true
+  # 必须增加这个，GitHub 才会理会来自 Cloudflare 的指令
+  repository_dispatch:
+    types: [tg_bot_trigger]
 
 jobs:
   run-script:
