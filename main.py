@@ -108,7 +108,6 @@ def process_single_account(acc, otp):
             return False
 
 if __name__ == "__main__":
-    # 从 GitHub Secrets 和 Inputs 获取数据
     accounts_raw = os.getenv("ACCOUNTS_YAML")
     otp = os.getenv("OTP_CODE")
     
@@ -117,9 +116,11 @@ if __name__ == "__main__":
         exit(1)
 
     accounts = yaml.safe_load(accounts_raw)
-    print(f"🚀 准备为 {len(accounts)} 个账号签到 | OTP 码: {otp}")
+    
+    # 计算最优并发数：如果有11个人，开4个线程分3批跑是最快的平衡点
+    num_workers = min(len(accounts), 4) 
+    
+    print(f"⚡ 极速模式启动 | 并发数: {num_workers} | 目标人数: {len(accounts)}")
 
-    # 并发控制：建议设置为 1 (最稳) 或 2 (略快)
-    # GitHub 免费服务器性能有限，不建议超过 3
-    with ThreadPoolExecutor(max_workers=1) as executor:
+    with ThreadPoolExecutor(max_workers=num_workers) as executor:
         executor.map(lambda acc: process_single_account(acc, otp), accounts)
