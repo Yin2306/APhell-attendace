@@ -1,25 +1,9 @@
 import os
+import time
 import yaml
 import requests
+from playwright.sync_api import sync_playwright
 from concurrent.futures import ThreadPoolExecutor
-
-def get_token_via_api(username, password):
-    """直接模拟 Apspace 登录接口，不通过浏览器"""
-    session = requests.Session()
-    login_url = "https://apspace.apu.edu.my/api/login" # 模拟登录 API
-    payload = {
-        "username": f"{username}@mail.apu.edu.my",
-        "password": password
-    }
-    try:
-        # 直接发送 POST 请求获取 Token
-        response = session.post(login_url, json=payload, timeout=10)
-        data = response.json()
-        # 注意：这里需要根据 APU 实际 API 的返回字段来提取 token
-        # 通常是 data['token'] 或 data['data']['token']
-        return data.get('token') or data.get('data', {}).get('token')
-    except:
-        return None
 
 def take_attendance(name, token, api_key, otp):
     url = "https://attendix.apu.edu.my/graphql"
@@ -39,23 +23,52 @@ def take_attendance(name, token, api_key, otp):
     except:
         return None
 
-def process_account(acc, otp):
-    print(f"⚡ Processing {acc['name']}...")
-    # 核心：不再调用 Playwright，直接发请求
-    token = get_token_via_api(acc['username'], acc['password'])
-    if token:
-        res = take_attendance(acc['name'], token, acc['api_key'], otp)
-        print(f"✅ {acc['name']} Done: {res}")
-    else:
-        print(f"❌ {acc['name']} Login Failed")
+def process_single_account(acc, otp):
+    print(f"🚀 {acc['name']} is logging in...")
+    with sync_playwright() as p:
+        try:
+            browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
+            context = browser.new_context()
+            page = context.new_page()
+            
+            token_container = []
+            def handle_request(request):
+                auth = request.headers.get("authorization")
+                if auth and "Bearer" in auth:
+                    token_container.append(auth.replace("Bearer ", ""))
+
+            page.on("request", handle_request)
+            page.goto("https://apspace.apu.edu.my/login")
+            
+            # 自动填写
+            page.fill('input[type="email"]', f"{acc['username']}@mail.apu.edu.my")
+            page.click('input[type="submit"]')
+            page.wait_for_selector('input[type="password"]', timeout=10000)
+            page.fill('input[type="password"]', acc['password'])
+            page.click('input[type="submit"]')
+            
+            # 抢跑逻辑：一旦抓到 Token，立刻发请求并关闭浏览器
+            for _ in range(30):
+                if token_container:
+                    token = token_container[0]
+                    result = take_attendance(acc['name'], token, acc['api_key'], otp)
+                    print(f"✅ {acc['name']} Done: {result}")
+                    browser.close()
+                    return True
+                time.sleep(0.5)
+            
+            browser.close()
+            return False
+        except Exception as e:
+            print(f"❌ {acc['name']} Error: {str(e)}")
+            return False
 
 if __name__ == "__main__":
     accounts_raw = os.getenv("ACCOUNTS_YAML")
     otp = os.getenv("OTP_CODE")
     if not accounts_raw or not otp: exit(1)
-
     accounts = yaml.safe_load(accounts_raw)
     
-    # 11个人一起跑，API 模式下负载极低
+    # 11人同时起步
     with ThreadPoolExecutor(max_workers=len(accounts)) as executor:
-        executor.map(lambda acc: process_account(acc, otp), accounts)
+        executor.map(lambda acc: process_single_account(acc, otp), accounts)
