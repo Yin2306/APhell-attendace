@@ -29,10 +29,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          # 使用 --no-cache-dir 并只安装核心库
           pip install playwright pyyaml requests --no-cache-dir
-          
-          # 关键优化：如果缓存命中了，只安装系统依赖（install-deps），不重新下载浏览器
+          # 如果缓存命中，只装系统补丁，不重复下载浏览器，能省下 30-40 秒
           if [ "${{ steps.cache-playwright.outputs.cache-hit }}" == "true" ]; then
             playwright install-deps chromium
           else
