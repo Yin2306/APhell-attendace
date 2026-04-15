@@ -48,38 +48,35 @@ def process_single_account(acc, otp):
 
             page.on("request", handle_request)
 
-            # 1. 访问 APSpace
-            page.goto("https://apspace.apu.edu.my/login", wait_until="domcontentloaded", timeout=60000)
+            # --- 1. 直接进入微软授权页面 (跳过 APSpace 首页) ---
+            login_url = "https://login.microsoftonline.com/0fed03a3-402d-4633-a8cd-8b308822253e/oauth2/v2.0/authorize?client_id=e96b418c-3f97-4b0f-b124-1cb3b347a06e&response_type=code&redirect_uri=https%3A%2F%2Fauth.apu.edu.my%2Fauth_token&scope=Group.Read.All+GroupMember.Read.All+User.Read+offline_access+openid+profile&state=%7B%22origin%22%3A+%22https%3A%2F%2Fapspace.apu.edu.my%22%2C+%22endpoint%22%3A+%22%2Flogin%22%2C+%22app_id%22%3A+%22apspace%22%7D"
             
-            # 2. 增加一点点缓冲，等按钮出来
-            time.sleep(2) 
+            print(f"📡 {acc['name']} 正在直达微软登录页...")
+            page.goto(login_url, wait_until="networkidle", timeout=60000)
             
-            try:
-                # 强制等待这个按钮，增加到 15 秒
-                page.wait_for_selector('text="Log In"', timeout=15000)
-                page.click('text="Log In"')
-            except: 
-                print(f"⚠️ {acc['name']} 没看到 Log In 按钮，可能已经自动跳转")
-
-            # 3. 处理微软登录逻辑
+            # --- 2. 处理账号输入或选择 ---
             full_email = f"{acc['username']}@mail.apu.edu.my"
             
-            # 检查是否有“Pick an account”
             try:
-                account_selector = f"text='{full_email}'"
-                page.wait_for_selector('body', timeout=10000)
-                if page.is_visible(account_selector):
-                    page.click(account_selector)
+                # 这里的 selector 改得更通用一点，同时等“输入框”或“账号选择列表”
+                page.wait_for_selector('input[type="email"], [role="listitem"]', timeout=20000)
+                
+                # 如果看到了你的 TP 号已经在那了，直接点
+                if page.get_by_text(full_email).is_visible():
+                    print(f"✅ {acc['name']} 发现已有账号，点击头像...")
+                    page.get_by_text(full_email).click()
                 else:
+                    print(f"📝 {acc['name']} 手动输入账号...")
                     page.fill('input[type="email"]', full_email)
                     page.click('input[type="submit"]')
-            except:
-                # 兜底：直接尝试填表
+            except Exception as e:
+                print(f"⚠️ {acc['name']} 账号页处理异常，尝试保底输入...")
                 page.fill('input[type="email"]', full_email)
                 page.click('input[type="submit"]')
 
-            # 4. 填密码
-            page.wait_for_selector('input[type="password"]', timeout=15000)
+            # --- 3. 填密码 ---
+            print(f"🔑 {acc['name']} 正在输入密码...")
+            page.wait_for_selector('input[type="password"]', timeout=20000)
             page.fill('input[type="password"]', acc['password'])
             page.click('input[type="submit"]')
             
@@ -89,15 +86,14 @@ def process_single_account(acc, otp):
                 page.click('#idSIButton9')
             except: pass
 
-            # 5. 模拟进入 Dashboard 并触发 Token
-            print(f"🛰️ {acc['name']} logged in, navigating to Attendix...")
-            page.wait_for_url("**/tabs/dashboard", timeout=20000)
-            page.goto("https://apspace.apu.edu.my/attendix/update")
-
-            # 6. 截获 Token 并签到
-            for _ in range(30):
+            # --- 4. 模拟进入 Dashboard 并触发 Token ---
+            print(f"🛰️ {acc['name']} logged in, waiting for token...")
+            
+            # 这里我们不需要 goto 了，因为登录完会自动跳回 APSpace
+            # 我们只需要循环等 Token 出现即可
+            for _ in range(60): # 增加到 30 秒总等待时间
                 if token_container:
-                    token = token_container[-1] # 取最新的 token
+                    token = token_container[-1]
                     result = take_attendance(acc['name'], token, otp)
                     print(f"🔥 {acc['name']} SUCCESS: {result}")
                     browser.close()
@@ -110,7 +106,6 @@ def process_single_account(acc, otp):
         except Exception as e:
             print(f"❌ {acc['name']} Error: {str(e)}")
             return False
-# ... 之前的代码保持不变 ...
 
 if __name__ == "__main__":
     accounts_raw = os.getenv("ACCOUNTS_YAML")
@@ -123,10 +118,6 @@ if __name__ == "__main__":
     accounts = yaml.safe_load(accounts_raw)
     print(f"🚀 Launching attendance for {len(accounts)} accounts with OTP: {otp}")
 
-    # --- 重点：把这里的 max_workers 改成 3 ---
-    # 这样 GitHub 每次只跑 3 个人，跑完 3 个再跑下 3 个，绝对不会卡死
-    with ThreadPoolExecutor(max_workers=3) as executor:
-        executor.map(lambda acc: process_single_account(acc, otp), accounts)
-
-    with ThreadPoolExecutor(max_workers=len(accounts)) as executor:
+   # 第一次测试，务必用 1。成功了之后，下次再改回 3。
+    with ThreadPoolExecutor(max_workers=1) as executor:
         executor.map(lambda acc: process_single_account(acc, otp), accounts)
