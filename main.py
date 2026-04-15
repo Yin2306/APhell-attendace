@@ -131,16 +131,32 @@ if __name__ == "__main__":
 
     accounts = yaml.safe_load(accounts_raw)
     
-    # --- 极限加速配置 ---
-    # 5 个并发是 GitHub Actions 的性能甜点位
-    # 11 个人分三批跑，比 3 个并发快很多，又不会像 11 个并发那样直接卡死
     num_workers = 6
-    
     print(f"🚀 极速模式启动 | 线程数: {num_workers} | 目标人数: {len(accounts)} | OTP: {otp}")
 
-    with ThreadPoolExecutor(max_workers=num_workers) as executor:
-        # 使用 list() 强制执行 map，确保所有线程立即启动
-        list(executor.map(lambda acc: process_single_account(acc, otp), accounts))
+    # --- 修改点 1: 使用 list 接收线程返回的结果 ---
+    def run_and_report(acc):
+        # 我们稍微调整一下逻辑，让它返回 (姓名, 是否成功, 错误消息)
+        try:
+            # 假设你修改了 process_single_account 让它返回具体错误
+            # 这里为了简单，我们直接用 try-except 包裹
+            success = process_single_account(acc, otp)
+            if success:
+                return f"✅ {acc['name']}: Success"
+            else:
+                return f"❌ {acc['name']}: Failed (Login timeout/Token error)"
+        except Exception as e:
+            return f"❌ {acc['name']}: Failed ({str(e)})"
 
+    with ThreadPoolExecutor(max_workers=num_workers) as executor:
+        # 获取所有人的运行结果
+        final_reports = list(executor.map(run_and_report, accounts))
+
+    # --- 修改点 2: 将结果写入 result.txt ---
     end_time = time.time()
-    print(f"🏁 全部签到任务完成！总耗时: {int(end_time - start_time)} 秒")
+    summary = f"🏁 完成！总耗时: {int(end_time - start_time)}s\n" + "\n".join(final_reports)
+    
+    with open("result.txt", "w", encoding="utf-8") as f:
+        f.write(summary)
+    
+    print(summary)
