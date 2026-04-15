@@ -91,14 +91,18 @@ def process_single_account(acc, otp):
             print(f"🛰️ {acc['name']} 已登录，正在监听 Token 响应...")
             
             # 循环检查是否拦截到 Token
-            for _ in range(60): 
+            for _ in range(150): # 0.1s * 150 = 15秒总等待
                 if token_container:
-                    token = token_container[-1] # 使用最新的有效 Token
+                    token = token_container[-1]
+                    # 拿到 Token 立刻执行，不回传页面
                     result = take_attendance(acc['name'], token, otp)
-                    print(f"🔥 {acc['name']} 反馈结果: {result}")
+                    print(f"🔥 {acc['name']} SUCCESS: {result}")
+                    
+                    # 强制立刻关闭，不等待任何后续加载
+                    context.close()
                     browser.close()
                     return True
-                time.sleep(0.5)
+                time.sleep(0.1) # 极速轮询
             
             print(f"⚠️ {acc['name']} 抓取 Token 超时")
             browser.close()
