@@ -112,6 +112,9 @@ def process_single_account(acc, otp):
             return False
 
 if __name__ == "__main__":
+    import time
+    start_time = time.time()
+    
     accounts_raw = os.getenv("ACCOUNTS_YAML")
     otp = os.getenv("OTP_CODE")
     
@@ -121,9 +124,16 @@ if __name__ == "__main__":
 
     accounts = yaml.safe_load(accounts_raw)
     
-    # 建议设为 3。3 个人同时登录，速度会提升 3 倍，且不会卡死
-    num_workers = 3 
-    print(f"⚡ 开启极速模式 | 并发数: {num_workers} | 总人数: {len(accounts)}")
+    # --- 极限加速配置 ---
+    # 5 个并发是 GitHub Actions 的性能甜点位
+    # 11 个人分三批跑，比 3 个并发快很多，又不会像 11 个并发那样直接卡死
+    num_workers = 5 
+    
+    print(f"🚀 极速模式启动 | 线程数: {num_workers} | 目标人数: {len(accounts)} | OTP: {otp}")
 
     with ThreadPoolExecutor(max_workers=num_workers) as executor:
-        executor.map(lambda acc: process_single_account(acc, otp), accounts)
+        # 使用 list() 强制执行 map，确保所有线程立即启动
+        list(executor.map(lambda acc: process_single_account(acc, otp), accounts))
+
+    end_time = time.time()
+    print(f"🏁 全部签到任务完成！总耗时: {int(end_time - start_time)} 秒")
