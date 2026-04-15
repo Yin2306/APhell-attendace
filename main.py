@@ -49,13 +49,17 @@ def process_single_account(acc, otp):
             page.on("request", handle_request)
 
             # 1. 访问 APSpace
-            page.goto("https://apspace.apu.edu.my/login", wait_until="networkidle")
+            page.goto("https://apspace.apu.edu.my/login", wait_until="domcontentloaded", timeout=60000)
             
-            # 2. 点击 Log In 按钮
+            # 2. 增加一点点缓冲，等按钮出来
+            time.sleep(2) 
+            
             try:
-                page.wait_for_selector('text="Log In"', timeout=5000)
+                # 强制等待这个按钮，增加到 15 秒
+                page.wait_for_selector('text="Log In"', timeout=15000)
                 page.click('text="Log In"')
-            except: pass
+            except: 
+                print(f"⚠️ {acc['name']} 没看到 Log In 按钮，可能已经自动跳转")
 
             # 3. 处理微软登录逻辑
             full_email = f"{acc['username']}@mail.apu.edu.my"
