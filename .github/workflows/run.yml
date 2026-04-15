@@ -15,8 +15,16 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.9'
+      - name: Cache Playwright
+        id: cache-playwright
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-v1
       - name: Install dependencies
-        run: pip install pyyaml requests # 只装这两个，不装 playwright
+        run: |
+          pip install playwright pyyaml requests
+          playwright install --with-deps chromium
       - name: Run attendance script
         env:
           ACCOUNTS_YAML: ${{ secrets.ACCOUNTS_YAML }}
