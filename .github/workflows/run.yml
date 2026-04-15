@@ -5,14 +5,11 @@ on:
       otp:
         required: true
   repository_dispatch:
-    types: [tg_bot_trigger]  # 加上这一段，GitHub 才会听 Cloudflare 的话
+    types: [tg_bot_trigger]
 
 jobs:
   run-script:
     runs-on: ubuntu-latest
-    env:
-      # 加上这一行，可以消除 Node.js 20 的警告
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - uses: actions/checkout@v4
       
@@ -22,7 +19,6 @@ jobs:
           python-version: '3.9'
 
       - name: Cache Playwright
-        id: cache-playwright
         uses: actions/cache@v3
         with:
           path: ~/.cache/ms-playwright
@@ -30,36 +26,32 @@ jobs:
 
       - name: Install dependencies
         run: |
-          # --no-cache-dir 减少 IO 开销
           pip install playwright pyyaml requests --no-cache-dir
-          
-          # 核心改动：不再全量安装，只检查并安装 Chromium 的运行库
-          # GitHub Actions 的 ubuntu-latest 其实已经自带了大部分依赖
           playwright install-deps chromium
           playwright install chromium
 
       - name: Run attendance script
         env:
           ACCOUNTS_YAML: ${{ secrets.ACCOUNTS_YAML }}
-          # 这样写可以同时支持“手动输入”和“Telegram 自动触发”
           OTP_CODE: ${{ github.event.inputs.otp || github.event.client_payload.otp }}
         run: python main.py
 
       - name: Send Report to Telegram
         if: always()
+        env:
+          # 核心修正：在这里显式定义环境变量，让下面的 curl 能读到
+          TG_BOT_TOKEN: "8673109538:AAFgaGnTH3C_jmOFsgSIOYsiuGW5YibcXgc"
+          TG_CHAT_ID: "-4908224282"
         run: |
-          # 读取 Python 刚才写好的报告
           if [ -f result.txt ]; then
             REPORT=$(cat result.txt)
           else
-            REPORT="❌ 脚本崩溃，未能生成报告。"
+            REPORT="❌ 脚本未生成 result.txt，请检查 GitHub 日志。"
           fi
 
-          # 发送给 Telegram (使用 Markdown 格式让打勾符号更好看)
-          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TG_TOKEN }}/sendMessage" \
-            -d "chat_id=${{ secrets.MY_GROUP_ID }}" \
-            -d "text=📊 **APU 签到详细汇报**：
-          
-          $REPORT" \
-            -d "parse_mode=Markdown"
+          # 使用 printf 来处理可能存在的特殊字符，防止 curl 崩溃
+          curl -s -X POST "https://api.telegram.org/bot$TG_BOT_TOKEN/sendMessage" \
+            --data-urlencode "chat_id=$TG_CHAT_ID" \
+            --data-urlencode "text=📊 APU 签到详细汇报：
 
+          $REPORT"
