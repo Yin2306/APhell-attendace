@@ -62,7 +62,7 @@ def process_single_account(acc, otp):
             login_url = "https://login.microsoftonline.com/0fed03a3-402d-4633-a8cd-8b308822253e/oauth2/v2.0/authorize?client_id=e96b418c-3f97-4b0f-b124-1cb3b347a06e&response_type=code&redirect_uri=https%3A%2F%2Fauth.apu.edu.my%2Fauth_token&scope=Group.Read.All+GroupMember.Read.All+User.Read+offline_access+openid+profile&state=%7B%22origin%22%3A+%22https%3A%2F%2Fapspace.apu.edu.my%22%2C+%22endpoint%22%3A+%22%2Flogin%22%2C+%22app_id%22%3A+%22apspace%22%7D"
             
             print(f"📡 {acc['name']} 正在直达微软登录页...")
-            page.goto(login_url, wait_until="networkidle", timeout=60000)
+            page.goto(login_url, wait_until="domcontentloaded", timeout=60000)
             
             # 2. 识别账号 (处理直接输入或点击头像)
             full_email = f"{acc['username']}@mail.apu.edu.my"
