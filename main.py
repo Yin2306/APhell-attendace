@@ -30,67 +30,94 @@ def take_attendance(name, token, otp):
         return {"error": str(e)}
 
 def process_single_account(acc, otp):
+    """单个账号的登录及 Token 抓取流程"""
     print(f"🎬 Starting process for: {acc['name']}")
     with sync_playwright() as p:
         try:
-            # --- 极速改动 1: 禁用图片、GPU 和插件，减轻 CPU 压力 ---
+            # 启动无头浏览器
+            # 这里的 args 增加了禁用 GPU 和图片加载，能省下不少 CPU 资源
             browser = p.chromium.launch(headless=True, args=[
-                "--no-sandbox",
+                "--no-sandbox", 
+                "--disable-setuid-sandbox", 
+                "--disable-dev-shm-usage", 
                 "--disable-gpu",
-                "--disable-dev-shm-usage",
-                "--blink-settings=imagesEnabled=false"  # 不加载图片，速度提升 20%
+                "--blink-settings=imagesEnabled=false" # 禁用图片加载，最强提速
             ])
             context = browser.new_context(
-                user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"
+                user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
+                viewport={'width': 390, 'height': 844}
             )
             page = context.new_page()
             
+            # 用于存储拦截到的 Bearer Token
             token_container = []
             def handle_request(request):
-                # 只要抓到 Authorization 立即存入
                 auth = request.headers.get("authorization")
                 if auth and "Bearer" in auth:
                     token_container.append(auth.replace("Bearer ", ""))
 
             page.on("request", handle_request)
 
-            # --- 2. 直达微软 (保持原有稳定逻辑) ---
+            # 1. 直达微软登录页 (跳过 APSpace 首页提升稳定性)
             login_url = "https://login.microsoftonline.com/0fed03a3-402d-4633-a8cd-8b308822253e/oauth2/v2.0/authorize?client_id=e96b418c-3f97-4b0f-b124-1cb3b347a06e&response_type=code&redirect_uri=https%3A%2F%2Fauth.apu.edu.my%2Fauth_token&scope=Group.Read.All+GroupMember.Read.All+User.Read+offline_access+openid+profile&state=%7B%22origin%22%3A+%22https%3A%2F%2Fapspace.apu.edu.my%22%2C+%22endpoint%22%3A+%22%2Flogin%22%2C+%22app_id%22%3A+%22apspace%22%7D"
-            page.goto(login_url, wait_until="domcontentloaded", timeout=45000)
-
-            # --- 3. 极速填表 ---
-            full_email = f"{acc['username']}@mail.apu.edu.my"
-            page.wait_for_selector('input[type="email"], [role="listitem"]', timeout=15000)
             
-            if page.get_by_text(full_email).is_visible():
-                page.get_by_text(full_email).click()
-            else:
+            print(f"📡 {acc['name']} 正在直达微软登录页...")
+            page.goto(login_url, wait_until="networkidle", timeout=60000)
+            
+            # 2. 识别账号 (处理直接输入或点击头像)
+            full_email = f"{acc['username']}@mail.apu.edu.my"
+            try:
+                # 等待页面加载出账号列表或输入框
+                page.wait_for_selector('input[type="email"], [role="listitem"], text="Pick an account"', timeout=20000)
+                
+                if page.get_by_text(full_email).is_visible():
+                    print(f"✅ {acc['name']} 发现已有账号，点击头像登录...")
+                    page.get_by_text(full_email).click()
+                else:
+                    print(f"📝 {acc['name']} 手动输入 TP 号...")
+                    page.fill('input[type="email"]', full_email)
+                    page.click('input[type="submit"]')
+            except:
+                print(f"⚠️ {acc['name']} 尝试保底填表...")
                 page.fill('input[type="email"]', full_email)
                 page.click('input[type="submit"]')
 
-            page.wait_for_selector('input[type="password"]', timeout=15000)
+            # 3. 输入密码
+            print(f"🔑 {acc['name']} 正在输入密码...")
+            page.wait_for_selector('input[type="password"]', timeout=20000)
             page.fill('input[type="password"]', acc['password'])
-            # 这里点击完立刻开启高频监听，不等页面跳转完
             page.click('input[type="submit"]')
             
-            # --- 极速改动 2: 高频轮询 (0.1s 检查一次) ---
-            for _ in range(100): # 最多等 10 秒
+            # 处理“保持登录”弹窗
+            try:
+                page.wait_for_selector('#idSIButton9', timeout=5000)
+                page.click('#idSIButton9')
+            except: pass
+
+            # 4. 守株待兔抓取 Token
+            print(f"🛰️ {acc['name']} 已登录，正在监听 Token 响应...")
+            
+            # 循环检查是否拦截到 Token
+            for _ in range(150): # 0.1s * 150 = 15秒总等待
                 if token_container:
                     token = token_container[-1]
+                    # 拿到 Token 立刻执行，不回传页面
                     result = take_attendance(acc['name'], token, otp)
-                    print(f"🔥 {acc['name']} 反馈: {result}")
-                    # 抓到就闪人，不等其他请求
+                    print(f"🔥 {acc['name']} SUCCESS: {result}")
+                    
+                    # 强制立刻关闭，不等待任何后续加载
                     context.close()
                     browser.close()
                     return True
-                time.sleep(0.1) 
+                time.sleep(0.1) # 极速轮询
             
+            print(f"⚠️ {acc['name']} 抓取 Token 超时")
             browser.close()
             return False
         except Exception as e:
-            print(f"❌ {acc['name']} Error: {str(e)}")
+            print(f"❌ {acc['name']} 运行出错: {str(e)}")
             return False
-            
+
 if __name__ == "__main__":
     import time
     start_time = time.time()
@@ -104,10 +131,16 @@ if __name__ == "__main__":
 
     accounts = yaml.safe_load(accounts_raw)
     
-  # 设置为 6。
-    # 11 个人分两组：第一批 6 个，第二批 5 个。
-    # 这比 3 个一组（跑 4 轮）快了一倍！
-    num_workers = 6 
+    # --- 极限加速配置 ---
+    # 5 个并发是 GitHub Actions 的性能甜点位
+    # 11 个人分三批跑，比 3 个并发快很多，又不会像 11 个并发那样直接卡死
+    num_workers = 7
     
+    print(f"🚀 极速模式启动 | 线程数: {num_workers} | 目标人数: {len(accounts)} | OTP: {otp}")
+
     with ThreadPoolExecutor(max_workers=num_workers) as executor:
+        # 使用 list() 强制执行 map，确保所有线程立即启动
         list(executor.map(lambda acc: process_single_account(acc, otp), accounts))
+
+    end_time = time.time()
+    print(f"🏁 全部签到任务完成！总耗时: {int(end_time - start_time)} 秒")
