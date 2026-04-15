@@ -45,3 +45,21 @@ jobs:
           OTP_CODE: ${{ github.event.inputs.otp || github.event.client_payload.otp }}
         run: python main.py
 
+      - name: Send Report to Telegram
+        if: always()
+        run: |
+          # 读取 Python 刚才写好的报告
+          if [ -f result.txt ]; then
+            REPORT=$(cat result.txt)
+          else
+            REPORT="❌ 脚本崩溃，未能生成报告。"
+          fi
+
+          # 发送给 Telegram (使用 Markdown 格式让打勾符号更好看)
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TG_TOKEN }}/sendMessage" \
+            -d "chat_id=${{ secrets.MY_GROUP_ID }}" \
+            -d "text=📊 **APU 签到详细汇报**：
+          
+          $REPORT" \
+            -d "parse_mode=Markdown"
+
