@@ -127,7 +127,7 @@ if __name__ == "__main__":
     # --- 极限加速配置 ---
     # 5 个并发是 GitHub Actions 的性能甜点位
     # 11 个人分三批跑，比 3 个并发快很多，又不会像 11 个并发那样直接卡死
-    num_workers = 5 
+    num_workers = 7
     
     print(f"🚀 极速模式启动 | 线程数: {num_workers} | 目标人数: {len(accounts)} | OTP: {otp}")
 
