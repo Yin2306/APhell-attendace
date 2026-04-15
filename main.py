@@ -35,7 +35,14 @@ def process_single_account(acc, otp):
     with sync_playwright() as p:
         try:
             # 启动无头浏览器
-            browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
+            # 这里的 args 增加了禁用 GPU 和图片加载，能省下不少 CPU 资源
+            browser = p.chromium.launch(headless=True, args=[
+                "--no-sandbox", 
+                "--disable-setuid-sandbox", 
+                "--disable-dev-shm-usage", 
+                "--disable-gpu",
+                "--blink-settings=imagesEnabled=false" # 禁用图片加载，最强提速
+            ])
             context = browser.new_context(
                 user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
                 viewport={'width': 390, 'height': 844}
