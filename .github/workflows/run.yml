@@ -10,6 +10,7 @@ jobs:
   run-script:
     runs-on: ubuntu-latest
     env:
+      # 加上这一行，可以消除 Node.js 20 的警告
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - uses: actions/checkout@v4
@@ -18,12 +19,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.9'
-
-      - name: Cache pip packages
-        uses: actions/cache@v3
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-v1
 
       - name: Cache Playwright
         id: cache-playwright
@@ -34,7 +29,11 @@ jobs:
 
       - name: Install dependencies
         run: |
+          # --no-cache-dir 减少 IO 开销
           pip install playwright pyyaml requests --no-cache-dir
+          
+          # 核心改动：不再全量安装，只检查并安装 Chromium 的运行库
+          # GitHub Actions 的 ubuntu-latest 其实已经自带了大部分依赖
           playwright install-deps chromium
           playwright install chromium
 
