@@ -110,7 +110,7 @@ if __name__ == "__main__":
 
     accounts = yaml.safe_load(accounts_raw)
     # Set to 4 threads for best stability
-    num_workers = 4
+    num_workers = 3
     
     print(f"🚀 Starting batch mode | Threads: {num_workers} | Total accounts: {len(accounts)}")
 
